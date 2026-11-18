@@ -1,0 +1,105 @@
+name: Build Main
+
+on:
+  push:
+    branches: [main]
+
+# Prevent concurrent releases racing to create the same version tag
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check_changes.outputs.should_release }}
+      release_tag: ${{ steps.version_outputs.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .github/cliff.toml
+          args: --unreleased --strip header
+
+      - name: Detect bump type
+        id: bump
+        run: |
+          BUMP_TYPE=$(.github/workflows/detect-bump.sh)
+          echo "type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "Explicit bump type: ${BUMP_TYPE:-none}"
+
+      - name: Check for release-worthy changes
+        id: check_changes
+        # git-cliff outputs ### section headers only when there are matching commits
+        # (## [unreleased] header is always output, so we check for ### specifically)
+        # A "bump:" footer forces a release regardless
+        run: |
+          if echo "${{ steps.changelog.outputs.content }}" | grep -q '###'; then
+            echo "Release-worthy changes found"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          elif [ -n "${{ steps.bump.outputs.type }}" ]; then
+            echo "Release forced by bump footer"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "No release-worthy changes found"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Calculate next version
+        if: steps.check_changes.outputs.should_release == 'true'
+        id: version_outputs
+        # Not git-cliff --bumped-version: it won't bump without release-worthy commits
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "v0.0.0")
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LAST_TAG#v}"
+          case "${{ steps.bump.outputs.type }}" in
+            major) VERSION="$((MAJOR + 1)).0.0" ;;
+            minor) VERSION="$MAJOR.$((MINOR + 1)).0" ;;
+            *)     VERSION="$MAJOR.$MINOR.$((PATCH + 1))" ;;
+          esac
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION, Tag: v$VERSION"
+
+  ci:
+    needs: check-release
+    uses: ./.github/workflows/_ci.yml
+    with:
+      release_tag: ${{ needs.check-release.outputs.release_tag }}
+
+  create-tag:
+    needs: [check-release, ci]
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Create git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ needs.check-release.outputs.release_tag }}
+          git push origin ${{ needs.check-release.outputs.release_tag }}
+
+  release:
+    needs: [check-release, ci, create-tag]
+    if: needs.check-release.outputs.should_release == 'true'
+    uses: ./.github/workflows/_release.yml
+    with:
+      release_tag: ${{ needs.check-release.outputs.release_tag }}
+
+  # Called directly: releases made with GITHUB_TOKEN don't trigger `release` events
+  update-nix-flake:
+    needs: release
+    uses: ./.github/workflows/update-nix-flake.yml

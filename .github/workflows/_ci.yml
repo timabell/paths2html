@@ -1,0 +1,118 @@
+name: _ci
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'The release tag (e.g. v1.0.0)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  get-rust-version:
+    runs-on: ubuntu-latest
+    outputs:
+      rust-version: ${{ steps.rust-version.outputs.RUST_VERSION }}
+    steps:
+    - uses: actions/checkout@v7
+    - name: Get rust version from .tool-versions
+      id: rust-version
+      run: echo "RUST_VERSION=$(grep '^rust ' .tool-versions | awk '{print $2}')" >> $GITHUB_OUTPUT
+
+  build:
+    needs: get-rust-version
+    strategy:
+      matrix:
+        include:
+        - os: ubuntu-latest
+          target: x86_64-unknown-linux-musl
+          artifact_name: paths2html-linux-x86_64
+          binary_name: paths2html
+        - os: windows-latest
+          target: x86_64-pc-windows-msvc
+          artifact_name: paths2html-windows-x86_64
+          binary_name: paths2html.exe
+        - os: macos-latest
+          target: x86_64-apple-darwin
+          artifact_name: paths2html-macos-x86_64
+          binary_name: paths2html
+        - os: macos-latest
+          target: aarch64-apple-darwin
+          artifact_name: paths2html-macos-aarch64
+          binary_name: paths2html
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ needs.get-rust-version.outputs.rust-version }}
+        targets: ${{ matrix.target }}
+    - name: Cache Cargo registry
+      uses: actions/cache@v6
+      with:
+        path: ~/.cargo/registry/index
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-
+    - name: Cache Cargo dependencies
+      uses: actions/cache@v6
+      with:
+        path: ~/.cargo/registry/cache
+        key: ${{ runner.os }}-cargo-deps-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-deps-
+    - name: Cache build artifacts
+      uses: actions/cache@v6
+      with:
+        path: target
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.target }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}-
+          ${{ runner.os }}-${{ matrix.target }}-cargo-build-
+    - name: Install musl tools
+      if: matrix.target == 'x86_64-unknown-linux-musl'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y musl-tools
+    - name: Update Version (Linux/Windows)
+      if: inputs.release_tag != '' && matrix.os != 'macos-latest'
+      shell: bash
+      run: |
+        VERSION="${{ inputs.release_tag }}"
+        # Strip the 'v' prefix if present
+        VERSION="${VERSION#v}"
+        sed -i "s/0\\.0\\.0-git/$VERSION/" Cargo.toml
+        sed -i "s/0\\.0\\.0-git/$VERSION/" Cargo.lock
+    - name: Update Version (macOS)
+      if: inputs.release_tag != '' && matrix.os == 'macos-latest'
+      shell: bash
+      run: |
+        VERSION="${{ inputs.release_tag }}"
+        # Strip the 'v' prefix if present
+        VERSION="${VERSION#v}"
+        sed -i '' "s/0\\.0\\.0-git/$VERSION/" Cargo.toml
+        sed -i '' "s/0\\.0\\.0-git/$VERSION/" Cargo.lock
+    - name: Set macOS deployment target
+      if: runner.os == 'macOS'
+      run: echo "MACOSX_DEPLOYMENT_TARGET=10.7" >> $GITHUB_ENV
+    - name: Build
+      run: cargo build --target ${{ matrix.target }} --release
+    - name: Test
+      run: cargo test --verbose --release --no-fail-fast
+    - name: Package Binary
+      shell: bash
+      run: |
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          7z a ${{ matrix.artifact_name }}.zip "target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+        else
+          tar -czvf ${{ matrix.artifact_name }}.tar.gz -C "target/${{ matrix.target }}/release" "${{ matrix.binary_name }}"
+        fi
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_name }}.*
+        retention-days: 1
