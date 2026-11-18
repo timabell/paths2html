@@ -10,9 +10,9 @@ echo "+ curl -s https://static.rust-lang.org/dist/channel-rust-stable.toml"
 latest=$(curl -s https://static.rust-lang.org/dist/channel-rust-stable.toml | grep -A1 '^\[pkg.rust\]' | grep -oP 'version = "\K[0-9.]+')
 echo "Updating to rust $latest"
 
-sed -i "s/^rust .*/rust $latest/" .tool-versions
+sed -i "s/^rust = .*/rust = \"$latest\"/" mise.toml
 
-if git diff --quiet .tool-versions; then
+if git diff --quiet mise.toml; then
   echo "Already on latest rust, nothing to do"
   exit 0
 fi
@@ -22,7 +22,7 @@ echo "+ docker run --rm --user $(id -u):$(id -g) -e CARGO_HOME=/tmp/cargo -v $PW
 docker run --rm --user "$(id -u):$(id -g)" -e CARGO_HOME=/tmp/cargo -v "$PWD":/src -w /src "rust:$latest" cargo test
 
 echo "Committing upgrades..."
-git commit --include .tool-versions \
+git commit --include mise.toml \
 --message "chore: Upgrade build to rust $latest" \
 --message 'Upgraded by `upgrade-rust.sh`' \
 --message 'bump: patch'

@@ -132,7 +132,7 @@ Or individually. Each script refuses to run with staged changes and commits its 
 
 | Script | What it does | Needs |
 |--------|--------------|-------|
-| `upgrade-rust.sh` | Moves `.tool-versions` to the latest stable Rust, runs tests | [docker](https://www.docker.com/) |
+| `upgrade-rust.sh` | Moves `mise.toml` to the latest stable Rust, runs tests | [docker](https://www.docker.com/) |
 | `upgrade-crates.sh` | Upgrades crates, including incompatible versions, runs tests | [docker](https://www.docker.com/) |
 | `upgrade-actions.sh` | Bumps GitHub Actions in `.github/workflows` to the major version of their latest release | [gh](https://cli.github.com/) |
 

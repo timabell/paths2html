@@ -6,7 +6,7 @@ if ! git diff --cached --quiet; then
   exit 1
 fi
 
-rust=$(grep '^rust ' .tool-versions | awk '{print $2}')
+rust=$(grep '^rust = ' mise.toml | cut -d'"' -f2)
 
 echo "+ docker run --rm --user $(id -u):$(id -g) -e CARGO_HOME=/tmp/cargo -v $PWD:/src -w /src rust:$rust sh -c 'cargo update && cargo install cargo-edit && cargo upgrade --incompatible'"
 docker run --rm --user "$(id -u):$(id -g)" -e CARGO_HOME=/tmp/cargo -v "$PWD":/src -w /src "rust:$rust" sh -c 'cargo update && cargo install cargo-edit && cargo upgrade --incompatible'
