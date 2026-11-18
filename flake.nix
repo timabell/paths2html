@@ -5,20 +5,20 @@
 
   outputs = { self, nixpkgs }:
     let
-      version = "0.0.0";
+      version = "0.0.4";
 
       assets = {
         x86_64-linux = {
           name = "paths2html-linux-x86_64.tar.gz";
-          sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+          sha256 = "2dc341fb653d7d3f8a538a27fcac8d4dcc5700e3e2429957e728fad9026dfab5";
         };
         x86_64-darwin = {
           name = "paths2html-macos-x86_64.tar.gz";
-          sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+          sha256 = "ac8e4bf0223938fc2a21e289be8c0b1f17b1e20fc69ba2c1044e6234cebec6d7";
         };
         aarch64-darwin = {
           name = "paths2html-macos-aarch64.tar.gz";
-          sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+          sha256 = "b7eab42e38409cfdce2956efff5002ed710252d05ba6cf535e806b20ef37cefa";
         };
       };
 
